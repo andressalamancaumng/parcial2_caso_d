@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { AuthService } from '../shared/services/auth.service';
-import { environment } from '../../../environments/environment';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-cms-editor',
