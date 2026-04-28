@@ -15,9 +15,12 @@ def crear_articulo(data: dict, authorization: str = Header(None)):
     autor_id  = data.get("autor_id")      # ← VULNERABLE: viene del body, no del JWT
     conn = psycopg2.connect(**DB_CONFIG); cursor = conn.cursor()
     # ← VULNERABLE: SQL injection
-    cursor.execute(
-        f"INSERT INTO articulos (titulo,contenido,autor_id,estado) "
-        f"VALUES ('{titulo}','{contenido}',{autor_id},'borrador')"
+   cursor.execute(
+    """
+    INSERT INTO articulos (titulo, contenido, autor_id, estado)
+    VALUES (%s, %s, %s, %s)
+    """,
+    (titulo, contenido, autor_id, "borrador")
     )
     conn.commit(); conn.close()
     return {"mensaje":"Articulo creado","contenido_guardado":contenido}
@@ -27,7 +30,10 @@ def obtener_articulo(articulo_id: int, authorization: str = Header(None)):
     if not authorization: raise HTTPException(401, "No autorizado")
     payload = decode_token(authorization)
     conn = psycopg2.connect(**DB_CONFIG); cursor = conn.cursor()
-    cursor.execute(f"SELECT * FROM articulos WHERE id = {articulo_id}")
+    cursor.execute(
+    "SELECT * FROM articulos WHERE id = %s",
+    (articulo_id,)
+    )
     art = cursor.fetchone(); conn.close()
     if not art:
         # ← VULNERABLE: expone nombre de tabla en el error
@@ -40,6 +46,9 @@ def publicar_articulo(articulo_id: int, authorization: str = Header(None)):
     payload = decode_token(authorization)
     # ← VULNERABLE: no verifica rol EDITOR/ADMIN
     conn = psycopg2.connect(**DB_CONFIG); cursor = conn.cursor()
-    cursor.execute(f"UPDATE articulos SET estado='publicado' WHERE id={articulo_id}")
+    cursor.execute(
+    "UPDATE articulos SET estado = %s WHERE id = %s",
+    ("publicado", articulo_id)
+    )
     conn.commit(); conn.close()
     return {"mensaje": f"Articulo {articulo_id} publicado"}

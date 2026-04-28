@@ -17,7 +17,12 @@ def login(body: LoginBody):
     pwd = hash_password(body.password)
     # ← VULNERABLE: SQL injection
     cursor.execute(
-        f"SELECT id,nombre,role FROM periodistas WHERE email='{body.email}' AND pwd_hash='{pwd}'"
+    """
+    SELECT id, nombre, role
+    FROM periodistas
+    WHERE email = %s AND pwd_hash = %s
+    """,
+    (body.email, pwd)
     )
     usuario = cursor.fetchone(); conn.close()
     if not usuario: raise HTTPException(401, "Credenciales invalidas")
