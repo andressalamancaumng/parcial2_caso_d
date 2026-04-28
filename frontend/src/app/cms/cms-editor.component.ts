@@ -78,7 +78,9 @@ export class CmsEditorComponent implements OnInit {
       titulo: this.titulo,
       contenido: this.contenidoHtml,
       autor_id: this.autorId        // ← editable — suplantacion de autoria
-    }).subscribe(r => console.log('Guardado:', r));
+    }).subscribe(() => {
+  alert('Artículo guardado correctamente.');
+});
   }
 
   publicarArticulo() {

@@ -11,12 +11,19 @@ export class AuthInterceptor implements HttpInterceptor {
     const token = this.auth.getToken();
     // ← VULNERABLE: sin prefijo Bearer
     const authReq = token ? req.clone({ setHeaders: { Authorization: token } }) : req;
-    return next.handle(authReq).pipe(
-      catchError((err: HttpErrorResponse) => {
-        // ← VULNERABLE: sin manejo diferenciado
-        console.error('HTTP Error:', err.error);
-        return throwError(() => err);
-      })
-    );
+    return next.handle(req).pipe(
+    catchError((err: HttpErrorResponse) => {
+      if (err.status === 401) {
+        localStorage.removeItem('jwt_noticias');
+        window.location.href = '/login';
+      }
+
+      if (err.status === 403) {
+        alert('No tienes permiso para realizar esta acción.');
+      }
+
+      return throwError(() => err);
+    })
+  );
   }
 }
