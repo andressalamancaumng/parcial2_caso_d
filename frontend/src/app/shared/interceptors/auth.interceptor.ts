@@ -9,8 +9,13 @@ export class AuthInterceptor implements HttpInterceptor {
   constructor(private auth: AuthService) {}
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
     const token = this.auth.getToken();
-    // ← VULNERABLE: sin prefijo Bearer
-    const authReq = token ? req.clone({ setHeaders: { Authorization: token } }) : req;
+    const authReq = token
+  ? req.clone({
+      setHeaders: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+  : req;
     return next.handle(req).pipe(
     catchError((err: HttpErrorResponse) => {
       if (err.status === 401) {
