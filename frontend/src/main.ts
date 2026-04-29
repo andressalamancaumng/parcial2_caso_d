@@ -3,5 +3,5 @@ import { AppModule } from './app/app.module';
 
 platformBrowserDynamic().bootstrapModule(AppModule)
   .catch(() => {
-  document.body.innerHTML = 'No fue posible iniciar la aplicación.';
+  document.body.textContent = 'No fue posible iniciar la aplicación.';
 });
