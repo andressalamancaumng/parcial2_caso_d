@@ -1,32 +1,49 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, EmailStr
-import psycopg2
-from src.auth.service import hash_password, verify_password, create_token, DB_PASS
-from datetime import datetime
+
+from src.auth.auth_service import (
+    authenticate_user,
+    logout_user,
+    register_user
+)
+from src.auth.rbac import get_current_payload
+
 
 router = APIRouter()
-DB_CONFIG = {"host":"10.0.0.10","database":"noticias360","user":"noticias_user","password":DB_PASS}
+
+
+class RegisterBody(BaseModel):
+    nombre: str
+    email: EmailStr
+    password: str
+
 
 class LoginBody(BaseModel):
     email: EmailStr
     password: str
 
-@router.post("/login")
-def login(body: LoginBody):
-    conn = psycopg2.connect(**DB_CONFIG); cursor = conn.cursor()
-    pwd = hash_password(body.password)
-    # ← VULNERABLE: SQL injection
-    cursor.execute(
-    """
-    SELECT id, nombre, role
-    FROM periodistas
-    WHERE email = %s AND pwd_hash = %s
-    """,
-    (body.email, pwd)
+
+@router.post("/register")
+def register(body: RegisterBody):
+    return register_user(
+        nombre=body.nombre,
+        email=body.email,
+        password=body.password
     )
-    usuario = cursor.fetchone(); conn.close()
-    if not usuario: raise HTTPException(401, "Credenciales invalidas")
-    # ← VULNERABLE: 24h para cuentas con fuentes confidenciales
-    token = create_token({"user_id":usuario[0],"nombre":usuario[1],"role":usuario[2],
-                          "exp": (datetime.utcnow().timestamp() + 86400)})
-    return {"token": token}
+
+
+@router.post("/login")
+def login(body: LoginBody, request: Request):
+    return authenticate_user(
+        email=body.email,
+        password=body.password,
+        request=request
+    )
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    payload=Depends(get_current_payload)
+):
+    return logout_user(payload, request)
