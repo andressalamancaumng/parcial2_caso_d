@@ -1,0 +1,403 @@
+##"""
+#### Vulnerabilidad: Inyección SQL (SQLi) — [OWASP A03:2025]
+
+*Código vulnerable:*
+cursor.execute(f"SELECT id, nombre, role FROM periodistas WHERE email='est.sara.gomezp@unimilitar.edu.co' AND pwd_hash='{pwd_hash}'")
+
+*Por qué es vulnerable:*
+Porque el uso de f-strings (f"...") une el valor de la variable directamente en la instrucción SQL. Un atacante puede introducir comillas y sentencias maliciosas (como ' OR '1'='1) en la contraseña, pasándolo como una consulta y saltándose el login.
+
+*Código corregido:*
+query = "SELECT id, nombre, role FROM periodistas WHERE email = %s AND pwd_hash = %s"
+cursor.execute(query, (email, pwd_hash))
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Se hace el uso de consultas parametrizadas (%s). El driver de la base de datos (psycopg2) se encarga de escapar y tratar los inputs estrictamente como datos literales, haciendo imposible que se ejecuten como comandos SQL.
+
+---
+
+#### Vulnerabilidad: Criptografía Fallida (Base64) — [OWASP A02:2025]
+
+*Código vulnerable:*
+nombre_cifrado = base64.b64encode(nombre_fuente.encode()).decode()
+
+*Por qué es vulnerable:*
+Base64 es un algoritmo de codificación de dos vías y esta no utiliza ninguna llave. Cualquier persona que tenga acceso a la base de datos puede revertir fácilmente la encriptación a texto claro por medio de convertidores web, exponiendo la identidad de las fuentes.
+
+*Código corregido:*
+from cryptography.fernet import Fernet
+import os
+cipher_suite = Fernet(os.getenv("ENCRYPTION_KEY").encode())
+nombre_cifrado = cipher_suite.encrypt(nombre_fuente.encode()).decode()
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Se hace implementación de Fernet, que usa AES-128 en modo CBC con HMAC, cifrado de manera simétrica la información y requiriendo una llave secreta (almacenada de forma segura en el entorno) protegiendo así la fuente.
+
+---
+
+#### Vulnerabilidad: Lógica de Negocio Hardcoded (Email fijo) — [OWASP A01:2025]
+
+*Código vulnerable:*
+f"SELECT id, nombre, role FROM periodistas WHERE email='est.sara.gomezp@unimilitar.edu.co' AND pwd_hash='{pwd_hash}'"
+
+*Por qué es vulnerable:*
+La consulta ignora el parámetro email que recibe la función y tiene un correo estático quemado en el código, impidiendo el acceso de cualquier otro periodista y facilita que se puedan dirigir ataques hacia este único email.
+
+*Código corregido:*
+query = "SELECT id, nombre, role FROM periodistas WHERE email = %s AND pwd_hash = %s"
+cursor.execute(query, (email, pwd_hash))
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Reemplaza el correo quemado por el parámetro email dinámico validado mediante psycopg2, restaurando la funcionalidad de multiusuario del sistema.
+
+---
+
+#### Vulnerabilidad: Referencia Directa Insegura a Objetos (IDOR) — [OWASP A01:2025]
+
+*Código vulnerable:*
+cursor.execute("SELECT * FROM fuentes WHERE periodista_id = %s", (periodista_id,))
+
+*Por qué es vulnerable:*
+La consulta busca los registros basándose en el parámetro periodista_id enviado en la petición, pero no verifica si ese ID coincide con el usuario que está realizando la solicitud (solicitante_id). Un usuario puede manipular el ID para leer datos de otros usuarios.
+
+*Código corregido:*
+if str(periodista_id) != str(solicitante_id):
+    raise PermissionError("No tiene permisos para ver las fuentes de otro periodista")
+cursor.execute("SELECT * FROM fuentes WHERE periodista_id = %s", (solicitante_id,))
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Este impone un control de autorización, validando que el identificador de la fuente coincida con el ID extraído de la sesión del usuario (solicitante_id), bloqueando el espionaje interno.
+
+---
+
+#### Vulnerabilidad: Privilegios Excesivos (Admin) — [OWASP A01:2025]
+
+*Código vulnerable:*
+if role == "ADMIN":
+    cursor.execute("SELECT * FROM fuentes")
+
+*Por qué es vulnerable:*
+Este otorga un acceso total a la información a un rol administrativo, violando el principio de mínimo privilegio y el secreto profesional y permite que el personal técnico lea datos confidenciales que no le competen.
+
+*Código corregido:*
+if role == "ADMIN":
+    raise PermissionError("Los administradores no tienen acceso al contenido periodístico confidencial")
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Este implementa una separación de funciones más adecuada. El administrador mantiene el control operativo del sistema pero se le revoca el acceso de lectura a los datos confidenciales.
+
+---
+
+#### Vulnerabilidad: Hash sin Sal (No Salt) — [OWASP A02:2025]
+
+*Código vulnerable:*
+pwd_hash = hashlib.sha256(password.encode()).hexdigest()  # SHA256 sin sal
+
+*Por qué es vulnerable:*
+Se usa SHA256 puro, generando siempre el mismo hash para la misma contraseña. Si la base de datos se compromete, los atacantes pueden descifrar las claves masivamente usando diccionarios precalculados como Rainbow Tables.
+
+*Código corregido:*
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Se usa pwd_context.hash(password) para generar y .verify() para validar.
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Este utiliza el estándar bcrypt usando passlib que añade automáticamente una “sal” criptográfica a cada contraseña y un factor de costo computacional.
+
+---
+
+#### Vulnerabilidad: Secretos Hardcodeados (JWT) — [OWASP A07:2025]
+
+*Código vulnerable:*
+JWT_SECRET = "noticias360secret"
+
+*Por qué es vulnerable:*
+La clave maestra para firmar los tokens de sesión está escrita en texto normal; si el atacante accede al código fuente, puede generar tokens JWT válidos indefinidamente para cualquier rol.
+
+*Código corregido:*
+import os
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque extrae el secreto de las variables de entorno del sistema operativo, evitando que la clave viaje con el código fuente en el repositorio.
+
+---
+
+#### Vulnerabilidad: Secretos Hardcodeados (Base de Datos / AES) — [OWASP A01:2025]
+
+*Código vulnerable:*
+ENCRYPTION_KEY = "AES_KEY_noticias_2024_fixed"
+DB_PASS = "noticias_db_pass"
+
+*Por qué es vulnerable:*
+Las credenciales de acceso a la persistencia de los datos y la llave de cifrado están directamente en el script, de manera que si se filtra el repositorio se puede acceder a la red de datos sin restricciones.
+
+*Código corregido:*
+import os
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+DB_PASS = os.getenv("DB_PASS")
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Este también externaliza la configuración crítica, obligando a que las llaves se inyecten dinámicamente durante el despliegue del contenedor.
+
+---
+
+#### Vulnerabilidad: Expiración de Token Excesiva — [OWASP A07:2025]
+
+*Código vulnerable:*
+"exp": datetime.utcnow().timestamp() + 86400   # 24 horas
+
+*Por qué es vulnerable:*
+Porque este mantiene las sesiones de los periodistas por un día entero abiertas y una ventana de tiempo tan amplia permite que un token robado sea usado por mucho tiempo antes de invalidarse.
+
+*Código corregido:*
+"exp": datetime.utcnow().timestamp() + 3600   # 1 hora
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque reduce la ventana de exposición y obliga a re-autenticar la sesión tras una hora de actividad, minimizando así el impacto del compromiso de un token.
+
+---
+
+#### Vulnerabilidad: Exposición de IP Interna — [OWASP A01:2025]
+
+*Código vulnerable:*
+host="10.0.0.10", database="noticias360"
+
+*Por qué es vulnerable:*
+Porque deja la IP quemada en el código y revela detalles de la topología interna, ayudando a un posible atacante a orientar escaneos de red.
+
+*Código corregido:*
+import os
+conn = psycopg2.connect(host=os.getenv("DB_HOST", "localhost"), database="noticias360")
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque oculta la estructura de la red inyectando el host dinámicamente mediante variables de entorno, protegiendo la arquitectura interna.
+
+---
+
+#### Vulnerabilidad: Gestión Insegura de Secretos (JWT) — [OWASP A07:2025]
+
+*Código vulnerable:*
+JWT_SECRET = "noticias360secret"
+
+*Por qué es vulnerable:*
+La clave para los tokens y firmas está escrita en el código, si el repositorio es comprometido podrá falsificar identidades de cualquier nivel.
+
+*Código corregido:*
+import os
+JWT_SECRET = os.getenv("JWT_SECRET") 
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Se externaliza la clave secreta y esta ya no viaja con el código fuente, solo está disponible en el entorno de ejecución seguro.
+
+---
+
+#### Vulnerabilidad: Gestión Insegura de Secretos (Base de Datos) — [OWASP A01:2025]
+
+*Código vulnerable:*
+user="noticias_user", password="noticias_db_pass"
+
+*Por qué es vulnerable:*
+Las credenciales de acceso a la base de datos están expuestas en texto claro dentro de las funciones del router y cualquier persona puede manipular la base de datos si tiene acceso al código.
+
+*Código corregido:*
+import os
+db_user = os.getenv("DB_USER")
+db_pass = os.getenv("DB_PASS")
+conn = psycopg2.connect(host=db_host, database="noticias360", user=db_user, password=db_pass)
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque utiliza variables de entorno inyectadas en tiempo de ejecución, asegurando que las credenciales permanezcan protegidas.
+
+---
+
+#### Vulnerabilidad: Exposición de IP Interna (AWS) — [OWASP A05:2025]
+
+*Código vulnerable:*
+host="10.0.0.10"
+
+*Por qué es vulnerable:*
+Porque revela la red privada del sistema de AWS, dándole la información de infraestructura a un posible atacante.
+
+*Código corregido:*
+import os
+db_host = os.getenv("DB_HOST", "localhost") 
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Ocultamos la dirección física de los servidores. Al usar variables de entorno o nombres de host se abstrae la infraestructura y se dificulta el reconocimiento de red.
+
+---
+
+#### Vulnerabilidad: Omisión de Validación de Rol en Creación (RBAC) — [OWASP A01:2025]
+
+*Código vulnerable:*
+payload = decode_token(authorization)
+if not payload:
+    return {"error": "No autorizado"}
+# No hay validación de roles después de decodificar el token
+
+*Por qué es vulnerable:*
+El endpoint solo verifica que el token sea válido pero no comprueba los permisos del usuario para realizar la creación de artículos.
+
+*Código corregido:*
+payload = decode_token(authorization)
+if not payload or payload.get("role") not in ["ROLE_PERIODISTA", "ROLE_EDITOR", "ROLE_ADMIN"]:
+    return {"error": "Acceso denegado: Se requiere perfil de redacción"}
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Verifica la autorización del rol del JWT y solo permite paso a las funciones de base de datos si el usuario posee los privilegios necesarios.
+
+---
+
+#### Vulnerabilidad: Falsificación de Autoría (Spoofing) — [OWASP A01:2025]
+
+*Código vulnerable:*
+autor_id = data.get("autor_id") # ← toma el autor_id del body — no del JWT
+
+*Por qué es vulnerable:*
+El sistema confía en la entrada enviada por el cliente para determinar quién escribe el artículo. Un atacante puede modificar el payload de JSON y poner el ID de otro periodista.
+
+*Código corregido:*
+# El autor_id se extrae de la fuente de verdad criptográfica: el JWT
+autor_id = payload.get("user_id")
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Este ignora el dato manipulable del cliente y extrae la identidad del token JWT que está firmado por el servidor y no puede ser alterado.
+
+---
+
+#### Vulnerabilidad: Inyección SQL (SQLi) en Creación — [OWASP A03:2021]
+
+*Código vulnerable:*
+cursor.execute(f"INSERT INTO articulos (titulo, contenido, autor_id, estado) VALUES ('{titulo}', '{contenido}', {autor_id}, 'borrador')")
+
+*Por qué es vulnerable:*
+Relaciona f-strings para construir la consulta SQL y si el título contiene una comilla (‘), puede romper la sintaxis SQL pudiendo ejecutar código malicioso.
+
+*Código corregido:*
+query = "INSERT INTO articulos (titulo, contenido, autor_id, estado) VALUES (%s, %s, %s, 'borrador')"
+cursor.execute(query, (titulo, contenido, autor_id))
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque se implementa parámetros %s para que la base datos compile la estructura antes de insertar los datos, bloqueando la inyección de comandos.
+
+---
+
+#### Vulnerabilidad: Omisión de RBAC en Publicación — [OWASP A01:2025]
+
+*Código vulnerable:*
+@router.post("/articulo/{articulo_id}/publicar")
+def publicar_articulo(articulo_id: int, authorization: str = Header(None)):
+    payload = decode_token(authorization)
+    if not payload: return {"error": "No autorizado"}
+    # Sin verificar el rol — cualquier usuario autenticado puede publicar
+
+*Por qué es vulnerable:*
+Porque la función verifica que el usuario esté autenticado, pero no su nivel de autorización, permitiendo que cualquier usuario ejecute una acción restringida a editores.
+
+*Código corregido:*
+if payload.get("role") not in ["ROLE_EDITOR", "ROLE_ADMIN"]:
+    return {"error": "Acción denegada. Solo los Editores pueden publicar artículos."}
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Aplica el modelo RBAC que lee el atributo role incluido en el payload de JWT y detiene la ejecución si el usuario no posee el privilegio.
+
+---
+
+#### Vulnerabilidad: Exposición de Información en Manejo de Errores — [OWASP A05:2025]
+
+*Código vulnerable:*
+return {"error": f"Artículo {articulo_id} no encontrado en tabla 'articulos' de la BD"}
+
+*Por qué es vulnerable:*
+El mensaje de error revela la estructura interna del almacenamiento facilitando el reconocimiento de la infraestructura para un atacante.
+
+*Código corregido:*
+return {"error": "El recurso solicitado no existe o no está disponible."}
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque implementa mensajes de error opacos hacia el cliente, lo que oculta los detalles de la implementación interna.
+
+---
+
+#### Vulnerabilidad: Cross-Site Scripting Almacenado (Stored XSS) — [OWASP A03:2021]
+
+*Código vulnerable:*
+contenido = data.get("contenido", "") # HTML enriquecido sin sanitizar
+
+*Por qué es vulnerable:*
+Porque el CMS acepta HTML directamente del cliente y lo guarda sin filtrar. Un atacante puede inyectar etiquetas <script> que se ejecutarán en los navegadores de los lectores.
+
+*Código corregido:*
+import bleach
+contenido_seguro = bleach.clean(contenido_raw, tags=['b', 'i', 'u', 'p', 'br', 'h1', 'h2', 'a'])
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Al usar la librería bleach para limpiar el contenido HTML se elimina cualquier etiqueta activa o peligrosa, neutralizando un posible ataque XSS.
+
+---
+
+#### Vulnerabilidad: Bypass de Sanitización (DOM XSS) — [OWASP A03:2025]
+
+*Código vulnerable:*
+this.previewHtml = this.sanitizer.bypassSecurityTrustHtml(this.contenidoHtml);
+
+*Por qué es vulnerable:*
+Porque el uso de bypassSecurityTrustHtml le dice a Angular que confíe en el contenido sin limpiarlo, permitiendo la inyección de código malicioso en el DOM.
+
+*Código corregido:*
+import * as DOMPurify from 'dompurify';
+this.previewHtml = DOMPurify.sanitize(this.contenidoHtml);
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Integramos la librería DOMPurify que limpia el HTML eliminando cualquier tipo de script o evento malicioso antes de que llegue al DOM, neutralizando el XSS.
+
+---
+
+#### Vulnerabilidad: Falsificación de Autoría (UI Spoofing) — [OWASP A01:2025]
+
+*Código vulnerable:*
+<input [(ngModel)]="autorId" name="autorId" type="number" />
+
+*Por qué es vulnerable:*
+Porque permite que el usuario modifique manualmente el identificador del autor en la interfaz gráfica, lo cual puede facilitar la suplantación si no hay validación.
+
+*Código corregido:*
+// El frontend ya no envía autorId, el backend lo extrae del token.
+this.http.post(${this.apiUrl}/cms/articulo, { titulo: this.titulo, contenido: this.contenido })
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Eliminamos el vector de ataque desde la interfaz de usuario, haciendo a la arquitectura depender de la fuente criptográfica segura (el token).
+
+---
+
+#### Vulnerabilidad: Exposición de Funciones Privilegiadas (UI) — [OWASP A01:2025]
+
+*Código vulnerable:*
+<button (click)="publicarArticulo()">Publicar</button>
+
+*Por que es vulnerable:*
+Porque muestra acciones críticas a usuarios que no tienen el nivel de autorización necesario, dejando que intenten ejecutar endpoints restringidos.
+
+*Código corregido:*
+<button *ngIf="authService.tieneRol(['ROLE_EDITOR', 'ROLE_ADMIN'])" (click)="publicarArticulo()">Publicar</button>
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Porque oculta los controles administrativos a los usuarios sin privilegios, reduciendo la superficie de ataque visible en la interfaz.
+
+---
+
+#### Vulnerabilidad: Gestión Insegura de Peticiones HTTP (Falta de Interceptor) — [OWASP A07:2025]
+
+*Código vulnerable:*
+headers: { Authorization: localStorage.getItem('jwt_noticias') || '' } // ← sin "Bearer "
+
+*Por qué es vulnerable:*
+Manejar el token manualmente propaga código inseguro, olvida el prefijo estándar Bearer y dificulta la gestión centralizada de la expiración.
+
+*Código corregido:*
+// Uso de un Interceptor HTTP para inyectar automáticamente "Authorization: Bearer <token>"
+
+*Por qué esta corrección mitiga la vulnerabilidad:*
+Delega la inyección del token a un Interceptor Global y garantiza que todas las peticiones lleven el header correcto de forma automática y segura.
+"""
