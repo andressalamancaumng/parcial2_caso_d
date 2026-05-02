@@ -34,6 +34,7 @@ import * as DOMPurify from 'dompurify';
   `
 })
 export class CmsEditorComponent implements OnInit {
+  
   titulo = '';
   contenidoHtml = '';
   previewHtml: string = ''; 
@@ -45,6 +46,8 @@ export class CmsEditorComponent implements OnInit {
     private route: ActivatedRoute,
     public auth: AuthService 
   ) {}
+
+  
 
   ngOnInit() {
     // AQUÍ ESTÁ LA LÍNEA 57 CORREGIDA
@@ -64,6 +67,7 @@ export class CmsEditorComponent implements OnInit {
   }
 
   actualizarPreview() {
+    // Se filtran etiquetas peligrosas y solo se permiten las necesarias para el formato
     this.previewHtml = DOMPurify.sanitize(this.contenidoHtml, {
       ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'h1', 'h2'],
       ALLOWED_ATTR: ['href']
