@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../shared/services/auth.service';
 import { environment } from '../../environments/environment';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser'; // Importante para [innerHTML]
 import * as DOMPurify from 'dompurify';
 
 @Component({
@@ -12,6 +13,7 @@ import * as DOMPurify from 'dompurify';
       <h2>Editor CMS — Noticias 360</h2>
       <input [(ngModel)]="titulo" name="titulo" placeholder="Titulo" />
 
+      <!-- Uso de SafeHtml para el preview -->
       <div class="preview" [innerHTML]="previewHtml"></div>
 
       <textarea [(ngModel)]="contenidoHtml" name="contenido"
@@ -20,7 +22,8 @@ import * as DOMPurify from 'dompurify';
 
       <button (click)="guardarArticulo()">Guardar Borrador</button>
       
-      <button *ngIf="auth.tieneRol(['ROLE_EDITOR', 'ROLE_ADMIN'])" 
+      <!-- Alineación de roles con el Backend (editor, admin) -->
+      <button *ngIf="auth.tieneRol(['editor', 'admin'])" 
               (click)="publicarArticulo()">Publicar</button>
 
       <div>
@@ -37,17 +40,16 @@ export class CmsEditorComponent implements OnInit {
   
   titulo = '';
   contenidoHtml = '';
-  previewHtml: string = ''; 
+  previewHtml: SafeHtml = ''; // Cambiado a SafeHtml
   fuentes: any[] = [];
   articuloId: number | null = null;
 
   constructor(
     private http: HttpClient,
     private route: ActivatedRoute,
-    public auth: AuthService 
+    public auth: AuthService,
+    private sanitizer: DomSanitizer // Inyectado para bypass de seguridad post-sanitización
   ) {}
-
-  
 
   ngOnInit() {
     // AQUÍ ESTÁ LA LÍNEA 57 CORREGIDA
@@ -67,21 +69,25 @@ export class CmsEditorComponent implements OnInit {
   }
 
   actualizarPreview() {
-    // Se filtran etiquetas peligrosas y solo se permiten las necesarias para el formato
-    this.previewHtml = DOMPurify.sanitize(this.contenidoHtml, {
+    // 1. Sanitización con DOMPurify (Punto 3.2.c)
+    const cleanHtml = DOMPurify.sanitize(this.contenidoHtml, {
       ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'h1', 'h2'],
       ALLOWED_ATTR: ['href']
     });
+    
+    // 2. Avisar a Angular que el HTML ya es seguro
+    this.previewHtml = this.sanitizer.bypassSecurityTrustHtml(cleanHtml);
   }
 
   guardarArticulo() {
+    // Sanitización antes de enviar al servidor (Defensa en profundidad)
     const contenidoSeguro = DOMPurify.sanitize(this.contenidoHtml);
 
     this.http.post(`${environment.apiUrl}/cms/articulo`, {
       titulo: this.titulo,
       contenido: contenidoSeguro
       // AQUÍ ESTÁ LA LÍNEA 88 CORREGIDA
-    }).subscribe((r: any) => console.log('Guardado:', r));
+    }).subscribe((r: any) => alert('Articulo guardado correctamente'));
   }
 
   publicarArticulo() {
