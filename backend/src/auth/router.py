@@ -20,7 +20,7 @@ class LoginBody(BaseModel):
 def login(body: LoginBody, request: Request):
     conn = psycopg2.connect(**DB_CONFIG); cursor = conn.cursor()
     
-    # 1. PREVENCIÓN SQL INJECTION: Buscamos solo por email de forma segura
+    
     query = "SELECT id, nombre, role, pwd_hash FROM periodistas WHERE email = %s"
     cursor.execute(query, (body.email,))
     usuario = cursor.fetchone()
@@ -39,11 +39,11 @@ def login(body: LoginBody, request: Request):
     # 3. JWT SEGURO (Claims del Punto 2.1)
     ahora = datetime.utcnow()
     payload = {
-        "sub": str(usuario[0]),          # ID del usuario (no el email)
-        "role": usuario[2],               # Rol del usuario
-        "exp": ahora + timedelta(hours=1), # Máximo 1 hora (No 24h)
-        "iat": ahora,                     # Tiempo de emisión
-        "jti": str(uuid.uuid4())          # ID único del token para lista negra
+        "sub": str(usuario[0]),          
+        "role": usuario[2],               
+        "exp": ahora + timedelta(hours=1), 
+        "iat": ahora,                     
+        "jti": str(uuid.uuid4())          
     }
     
     token = create_token(payload)
